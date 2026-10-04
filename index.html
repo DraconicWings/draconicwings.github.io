@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Card Binder03</title>
+  <title>Card Binder01</title>
   <!-- Supabase JS Client SDK -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- Twitch Extensions Helper SDK -->
@@ -222,7 +222,7 @@
 
   <main>
     <div class="card-grid" id="cardGrid">
-      <div class="loading-state" id="loadingState">Loading extension configuration from Twitch...</div>
+      <div class="loading-state" id="loadingState">Loading binder catalog...</div>
     </div>
   </main>
 
@@ -373,6 +373,10 @@
   </div>
 
   <script>
+    // --- RESTORED DEFAULT SUPABASE CREDENTIALS ---
+    const SUPABASE_URL = "https://your-supabase-url.supabase.co"; // Replace with your actual project URL if needed
+    const SUPABASE_KEY = "your-supabase-anon-key"; // Replace with your actual project anon key if needed
+
     let supabaseClient = null;
     let masterCards = [];
     let userInventory = {};
@@ -385,65 +389,47 @@
     let currentModalVariant = 'Normal';
     let isTwitchPanel = false;
 
-    // --- TWITCH PANEL MODE & AUTH CHECK ---
+    // --- INITIALIZE SUPABASE CLIENT IMMEDIATELY ---
+    try {
+      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    } catch (e) {
+      console.error("Failed to initialize Supabase client:", e);
+    }
+
+    // --- TWITCH PANEL MODE CHECK ---
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('mode') === 'panel' || window.self !== window.top) {
       isTwitchPanel = true;
       document.body.classList.add('twitch-panel-mode');
       
-      // Dynamically inject panel.css
       const panelLink = document.createElement('link');
       panelLink.rel = 'stylesheet';
       panelLink.href = 'panel.css';
       document.head.appendChild(panelLink);
     }
 
-    // --- DYNAMIC CONFIGURATION LOADER FROM TWITCH ---
-    if (window.Twitch && window.Twitch.ext) {
-      window.Twitch.ext.onAuthorized((auth) => {
-        if (auth && auth.userId) {
-          currentUserId = auth.userId;
-        }
-
-        // Listen to configuration saved by the streamer in config.html
-        window.Twitch.ext.configuration.onChanged(() => {
-          const config = window.Twitch.ext.configuration.broadcaster;
-          if (config && config.content) {
-            try {
-              const parsed = JSON.parse(config.content);
-              if (parsed.url && parsed.key) {
-                if (!supabaseClient) {
-                  supabaseClient = window.supabase.createClient(parsed.url, parsed.key);
-                  initBinder();
-                }
-              } else {
-                showConfigError("Configuration content is missing Supabase URL or Key.");
-              }
-            } catch (e) {
-              console.error("Failed to parse extension configuration:", e);
-              showConfigError("Failed to parse extension configuration settings.");
-            }
-          } else {
-            showConfigError("Please configure your Supabase URL and Key in the Twitch Extension settings dashboard.");
+    // --- INITIALIZE APP ON LOAD ---
+    window.addEventListener('DOMContentLoaded', async () => {
+      if (window.Twitch && window.Twitch.ext) {
+        window.Twitch.ext.onAuthorized((auth) => {
+          if (auth && auth.userId) {
+            currentUserId = auth.userId;
           }
         });
-      });
-    } else {
-      showConfigError("Twitch Extension Helper not detected. Please run inside the Twitch Developer Rig or panel view.");
-    }
+      }
 
-    function showConfigError(message) {
-      const grid = document.getElementById('cardGrid');
-      if (grid) {
-        grid.innerHTML = `
+      if (supabaseClient) {
+        await initAuth();
+        await fetchCardSets();
+      } else {
+        document.getElementById('cardGrid').innerHTML = `
           <div class="loading-state" style="color: #ff6b6b;">
-            ${message}
+            Supabase client could not be initialized. Please check your URL and Key configuration.
           </div>`;
       }
-    }
+    });
 
     async function initAuth() {
-      if (isTwitchPanel) return; // Skip standard Supabase auth if running inside Twitch panel
       if (!supabaseClient) return;
 
       try {
@@ -558,15 +544,6 @@
       }
     }
 
-    async function initBinder() {
-      if (isTwitchPanel && currentUserId) {
-        await fetchUserInventory(currentUserId);
-      } else {
-        await initAuth();
-      }
-      await fetchCardSets();
-    }
-
     async function fetchCardSets() {
       if (!supabaseClient) return;
       try {
@@ -606,10 +583,7 @@
     }
 
     async function fetchMasterCards(setId) {
-      if (!supabaseClient) {
-        document.getElementById('cardGrid').innerHTML = `<div class="loading-state">Supabase client not initialized.</div>`;
-        return;
-      }
+      if (!supabaseClient) return;
 
       try {
         const { data, error } = await supabaseClient
