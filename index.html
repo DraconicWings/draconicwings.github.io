@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Card Binder01</title>
+  <title>Card Binder03</title>
   <!-- Supabase JS Client SDK -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- Twitch Extensions Helper SDK -->
@@ -222,7 +222,7 @@
 
   <main>
     <div class="card-grid" id="cardGrid">
-      <div class="loading-state" id="loadingState">Loading Master Binder from Supabase...</div>
+      <div class="loading-state" id="loadingState">Loading extension configuration from Twitch...</div>
     </div>
   </main>
 
@@ -373,16 +373,7 @@
   </div>
 
   <script>
-    const SUPABASE_URL = 'https://nxlyzlfjvnoyvjysamkx.supabase.co';
-    const SUPABASE_KEY = 'sb_publishable_xaJYz0J2ofBLzGIJM4W5ww_wCiFfb2S';
-    
     let supabaseClient = null;
-    try {
-      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-    } catch (e) {
-      console.error("Failed to initialize Supabase client:", e);
-    }
-
     let masterCards = [];
     let userInventory = {};
     let currentUser = null;
@@ -405,15 +396,49 @@
       panelLink.rel = 'stylesheet';
       panelLink.href = 'panel.css';
       document.head.appendChild(panelLink);
-      
-      // Listen to Twitch Extension authorization to identify the viewer automatically
-      if (window.Twitch && window.Twitch.ext) {
-        window.Twitch.ext.onAuthorized((auth) => {
-          if (auth && auth.userId) {
-            currentUserId = auth.userId;
-            fetchUserInventory(currentUserId);
+    }
+
+    // --- DYNAMIC CONFIGURATION LOADER FROM TWITCH ---
+    if (window.Twitch && window.Twitch.ext) {
+      window.Twitch.ext.onAuthorized((auth) => {
+        if (auth && auth.userId) {
+          currentUserId = auth.userId;
+        }
+
+        // Listen to configuration saved by the streamer in config.html
+        window.Twitch.ext.configuration.onChanged(() => {
+          const config = window.Twitch.ext.configuration.broadcaster;
+          if (config && config.content) {
+            try {
+              const parsed = JSON.parse(config.content);
+              if (parsed.url && parsed.key) {
+                if (!supabaseClient) {
+                  supabaseClient = window.supabase.createClient(parsed.url, parsed.key);
+                  initBinder();
+                }
+              } else {
+                showConfigError("Configuration content is missing Supabase URL or Key.");
+              }
+            } catch (e) {
+              console.error("Failed to parse extension configuration:", e);
+              showConfigError("Failed to parse extension configuration settings.");
+            }
+          } else {
+            showConfigError("Please configure your Supabase URL and Key in the Twitch Extension settings dashboard.");
           }
         });
+      });
+    } else {
+      showConfigError("Twitch Extension Helper not detected. Please run inside the Twitch Developer Rig or panel view.");
+    }
+
+    function showConfigError(message) {
+      const grid = document.getElementById('cardGrid');
+      if (grid) {
+        grid.innerHTML = `
+          <div class="loading-state" style="color: #ff6b6b;">
+            ${message}
+          </div>`;
       }
     }
 
@@ -457,7 +482,7 @@
     }
 
     async function updatePendingTradesBadge() {
-      if (!currentUserId) return;
+      if (!currentUserId || !supabaseClient) return;
       const badge = document.getElementById('pendingTradeBadge');
       if (!badge) return;
 
@@ -480,7 +505,7 @@
     }
 
     async function syncUsernameToInventory(twitchId, username) {
-      if (!twitchId) return;
+      if (!twitchId || !supabaseClient) return;
       try {
         await supabaseClient
           .from('user_inventory')
@@ -534,7 +559,11 @@
     }
 
     async function initBinder() {
-      await initAuth();
+      if (isTwitchPanel && currentUserId) {
+        await fetchUserInventory(currentUserId);
+      } else {
+        await initAuth();
+      }
       await fetchCardSets();
     }
 
@@ -578,7 +607,7 @@
 
     async function fetchMasterCards(setId) {
       if (!supabaseClient) {
-        document.getElementById('cardGrid').innerHTML = `<div class="loading-state">Supabase client failed to load. Check your configuration keys.</div>`;
+        document.getElementById('cardGrid').innerHTML = `<div class="loading-state">Supabase client not initialized.</div>`;
         return;
       }
 
@@ -645,7 +674,7 @@
     }
 
     async function fetchUserInventory(twitchId) {
-      if (!twitchId) return;
+      if (!twitchId || !supabaseClient) return;
       try {
         const { data, error } = await supabaseClient
           .from('user_inventory')
@@ -984,7 +1013,7 @@
     usernameInput.addEventListener('input', async (e) => {
       const query = e.target.value.trim();
       receiverIdInput.value = '';
-      if (query.length < 1) {
+      if (query.length < 1 || !supabaseClient) {
         autocompleteDropdown.style.display = 'none';
         return;
       }
@@ -1030,7 +1059,7 @@
     });
 
     document.getElementById('submitTradeOfferBtn').addEventListener('click', async () => {
-      if (!currentUserId) return;
+      if (!currentUserId || !supabaseClient) return;
       const offerCardId = offerCardSelect.value;
       const offerVariant = offerVariantSelect.value;
       let receiverId = receiverIdInput.value.trim();
@@ -1096,7 +1125,7 @@
     document.getElementById('closeTradeModalBtn').addEventListener('click', () => tradeModalOverlay.classList.remove('active'));
 
     async function openTradeInboxModal() {
-      if (!currentUserId) return;
+      if (!currentUserId || !supabaseClient) return;
       tradeModalOverlay.classList.add('active');
       await loadTradeInbox();
     }
@@ -1188,6 +1217,7 @@
     }
 
     window.handleAcceptTrade = async function(tradeId) {
+      if (!supabaseClient) return;
       const { data, error } = await supabaseClient.rpc('accept_trade', { p_trade_id: tradeId });
       if (error || (data && data.startsWith('Error'))) {
         alert('Failed to accept: ' + (error?.message || data));
@@ -1199,6 +1229,7 @@
     };
 
     window.handleRejectTrade = async function(tradeId) {
+      if (!supabaseClient) return;
       const { data, error } = await supabaseClient.rpc('reject_trade', { p_trade_id: tradeId });
       if (error || (data && data.startsWith('Error'))) {
         alert('Failed to reject: ' + (error?.message || data));
@@ -1220,6 +1251,7 @@
     });
 
     async function loadAdminUsersList() {
+      if (!supabaseClient) return;
       const userSelect = document.getElementById('adminUserSelect');
       userSelect.innerHTML = '<option value="">-- Choose player --</option>';
       
@@ -1254,7 +1286,7 @@
       const twitchId = e.target.value;
       const tbody = document.getElementById('adminCollectionBody');
       
-      if (!twitchId) {
+      if (!twitchId || !supabaseClient) {
         tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Select a user above to view their collection.</td></tr>`;
         return;
       }
@@ -1297,7 +1329,6 @@
     document.getElementById('cancelAdminBtn').addEventListener('click', () => document.getElementById('adminModal').classList.remove('active'));
 
     document.getElementById('variantSelect').addEventListener('change', render);
-    initBinder();
   </script>
 </body>
 </html>
