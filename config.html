@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Card Binder Configuration</title>
+  <!-- Twitch Extensions Helper SDK -->
+  <script src="https://extension-files.twitch.tv/helper/v1/twitch-ext.min.js"></script>
+  <style>
+    :root {
+      --bg-dark: #0e0e10;
+      --card-bg: #18181b;
+      --accent: #9146ff;
+      --accent-hover: #772ce8;
+      --text: #efeff1;
+      --text-muted: #adadb8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    body { background-color: var(--bg-dark); color: var(--text); padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+
+    .config-container { background: var(--card-bg); border: 1px solid #2d2d35; border-radius: 12px; padding: 24px; max-width: 500px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    h3 { font-size: 1.2rem; margin-bottom: 16px; color: var(--text); }
+    .input-group { margin-bottom: 16px; }
+    label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px; font-weight: 600; }
+    input { width: 100%; padding: 10px 12px; background: #0e0e10; border: 1px solid #3a3a44; color: var(--text); border-radius: 6px; outline: none; font-size: 0.9rem; }
+    input:focus { border-color: var(--accent); }
+    
+    .btn-save { background: var(--accent); color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 700; width: 100%; font-size: 0.9rem; }
+    .btn-save:hover { background: var(--accent-hover); }
+    .status-msg { margin-top: 12px; font-size: 0.85rem; color: #00e5ff; text-align: center; min-height: 20px; }
+  </style>
+</head>
+<body>
+
+  <div class="config-container">
+    <h3>⚙️ Card Binder Configuration</h3>
+    <div class="input-group">
+      <label for="supabaseUrlInput">Supabase Project URL:</label>
+      <input type="text" id="supabaseUrlInput" placeholder="https://your-project.supabase.co" />
+    </div>
+    <div class="input-group">
+      <label for="supabaseKeyInput">Supabase Anon/Publishable Key:</label>
+      <input type="text" id="supabaseKeyInput" placeholder="your-anon-key-here" />
+    </div>
+    <button class="btn-save" id="saveBtn">Save Settings</button>
+    <div class="status-msg" id="statusMsg"></div>
+  </div>
+
+  <script>
+    const statusMsg = document.getElementById('statusMsg');
+
+    // Load existing configuration when Twitch extension helper initializes
+    window.Twitch.ext.onAuthorized((auth) => {
+      window.Twitch.ext.configuration.onChanged(() => {
+        const config = window.Twitch.ext.configuration.broadcaster;
+        if (config && config.content) {
+          try {
+            const parsed = JSON.parse(config.content);
+            document.getElementById('supabaseUrlInput').value = parsed.url || '';
+            document.getElementById('supabaseKeyInput').value = parsed.key || '';
+          } catch (e) {
+            console.error("Failed to parse existing configuration:", e);
+          }
+        }
+      });
+    });
+
+    // Save configuration to Twitch's Extension Config Service
+    document.getElementById('saveBtn').addEventListener('click', () => {
+      const url = document.getElementById('supabaseUrlInput').value.trim();
+      const key = document.getElementById('supabaseKeyInput').value.trim();
+
+      if (!url || !key) {
+        statusMsg.style.color = '#ff6b6b';
+        statusMsg.textContent = 'Please fill in both fields before saving.';
+        return;
+      }
+
+      const configData = JSON.stringify({ url, key });
+      
+      // Save globally for the broadcaster segment (version '1')
+      window.Twitch.ext.configuration.set('broadcaster', '1', configData);
+      
+      statusMsg.style.color = '#00e5ff';
+      statusMsg.textContent = 'Settings saved successfully!';
+      setTimeout(() => { statusMsg.textContent = ''; }, 3000);
+    });
+  </script>
+</body>
+</html>
